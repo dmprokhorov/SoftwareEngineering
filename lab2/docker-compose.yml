@@ -1,0 +1,14 @@
+services:
+  users:
+    build:
+      context: .
+      dockerfile: ./users/Dockerfile
+    ports:
+      - "8000:8000"
+  
+  budgets:
+    build:
+      context: .
+      dockerfile: ./budgets/Dockerfile
+    ports:
+      - "8001:8001"
