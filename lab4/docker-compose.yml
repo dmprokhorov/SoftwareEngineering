@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=users_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+
+  mongodb:
+    image: mongo:5.0
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=password
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "-u", "root", "-p", "password", "--eval", "db.adminCommand('ping')", "--quiet"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    volumes:
+      - ./mongodb_data:/data/db
+
+  users:
+    build:
+      context: .
+      dockerfile: ./users/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/users_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  budgets:
+    build:
+      context: .
+      dockerfile: ./budgets/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - MONGODB_URL=mongodb://root:password@mongodb:27017/
+    depends_on:
+      mongodb:
+        condition: service_healthy
