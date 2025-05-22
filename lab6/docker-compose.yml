@@ -1,0 +1,128 @@
+networks:
+  default:
+    name: myapp_network
+    driver: bridge
+
+
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=users_db
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: [ 'CMD-SHELL', 'pg_isready -U postgres' ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:6.0
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./redis_data:/data
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=2181
+      - ZOOKEEPER_TICK_TIME=2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    volumes:
+      - ./kafka_data:/confluentic/kafka
+    healthcheck:
+      test: ['CMD-SHELL', 'kafka-broker-api-versions --bootstrap-server kafka:9092']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  mongodb:
+    image: mongo:5.0
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=password
+    ports:
+      - '27017:27017'
+    healthcheck:
+      test: ['CMD', 'mongosh', '-u', 'root', '-p', 'password', '--eval', "db.adminCommand(\'ping\')", '--quiet']
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    volumes:
+      - ./mongodb_data:/data/db
+
+  users:
+    build:
+      context: .
+      dockerfile: ./users/Dockerfile.users
+    ports:
+      - '8000:8000'
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/users_db
+      - REDIS_URL=redis://redis:6379/0
+      - KAFKA_BROKER=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  consumer:
+    build:
+      context: .
+      dockerfile: ./users/Dockerfile.consumer
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/users_db
+      - KAFKA_BROKER=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  budgets:
+    build:
+      context: .
+      dockerfile: ./budgets/Dockerfile
+    ports:
+      - '8001:8001'
+    environment:
+      - MONGODB_URL=mongodb://root:password@mongodb:27017/
+    depends_on:
+      mongodb:
+        condition: service_healthy

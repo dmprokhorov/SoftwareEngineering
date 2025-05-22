@@ -1,0 +1,11 @@
+FROM python:3.9
+
+WORKDIR /app
+
+COPY ./users/requirements.txt ./
+RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --no-cache-dir -r requirements.txt
+
+COPY ./users/users.py .
+COPY ./users/consumer.py .
+
+CMD bash -c "python consumer.py"
